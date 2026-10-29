@@ -33,16 +33,16 @@ def dns_iterator(domain_name: str, record_type: int,recursion_depth: int = 0, vi
     visited_queries.add(query_key)
 
     dns_servers = [ROOT_DNS_SERVER]
-    queried_servers = set()
+    visited_servers = set()
 
     for _ in range(ITER_COUNT):
         next_dns_servers = []
 
         for dns_server in dns_servers:
-            if dns_server in queried_servers:
+            if dns_server in visited_servers:
                 continue
 
-            queried_servers.add(dns_server)
+            visited_servers.add(dns_server)
 
             try:
                 request_id, dns_request = create_dns_query(domain_name, record_type)
@@ -97,7 +97,7 @@ def dns_iterator(domain_name: str, record_type: int,recursion_depth: int = 0, vi
                         server_ip = record["data"]
                         next_server = (server_ip, 53)
 
-                        if next_server not in queried_servers:
+                        if next_server not in visited_servers:
                             next_dns_servers.append(next_server)
 
                         known_server_ips.add(server_ip)
@@ -119,6 +119,8 @@ def dns_iterator(domain_name: str, record_type: int,recursion_depth: int = 0, vi
                                 next_dns_servers.append((server_ip, 53))
                                 known_server_ips.add(server_ip)
 
+            print(known_server_ips)
+
         if not next_dns_servers:
             print(111)
             break
@@ -126,6 +128,38 @@ def dns_iterator(domain_name: str, record_type: int,recursion_depth: int = 0, vi
         dns_servers = next_dns_servers
     print(1111)
     return []
+
+def send_dns_request(server_addr):
+    try:
+        request_id, dns_request = create_dns_query(domain_name, record_type)
+
+        server_addr = dns_server[0]
+        ip_version = ipaddress.ip_address(server_addr).version
+
+        if ip_version == 6:
+            family = socket.AF_INET6
+            server = (server_addr, 53, 0, 0)
+        else:
+            family = socket.AF_INET
+            server = (server_addr, 53)
+
+        with socket.socket(family, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(TIMEOUT)
+            sock.sendto(dns_request, server)
+            dns_response, _ = sock.recvfrom(4096)
+
+        if len(dns_response) < 12:
+            return dict
+
+        response_id = int.from_bytes(dns_response[:2], "big")
+        if response_id != request_id:
+            return dict
+
+        dns_message = parse_dns_message(dns_response)
+        print(dns_message)
+
+    except (OSError, ValueError) as e:
+        print(f"DNS server {dns_server} failed: {e}")
 
 # def dns_iterator(domain_name: str, record_type: int, ):
 #     server = ROOT_DNS_SERVER
