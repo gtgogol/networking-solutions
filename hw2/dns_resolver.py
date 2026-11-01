@@ -2,18 +2,33 @@ import socket
 import struct
 import random
 import ipaddress
+from collections import deque
 from parser import parse_dns_message
 
-ROOT_DNS_SERVER = ("198.41.0.4", 53)  # a.root-servers.net
+ROOT_DNS_SERVERS = [
+    "198.41.0.4",      # A-root
+    "170.247.170.2",   # B-root
+    # "192.33.4.12",     # C-root
+    # "199.7.91.13",     # D-root
+    # "192.203.230.10",  # E-root
+    # "192.5.5.241",     # F-root
+    # "192.112.36.4",    # G-root
+    # "198.97.190.53",   # H-root
+    # "192.36.148.17",   # I-root
+    # "192.58.128.30",   # J-root
+    # "193.0.14.129",    # K-root
+    # "199.7.83.42",     # L-root
+    # "202.12.27.33",    # M-root
+]
 ITER_COUNT = 20
-TIMEOUT = 5
+TIMEOUT = 3
 
 
 DNS_TYPES = {
     1:   "A",       # IPv4-адрес
     2:   "NS",      # Авторитетный DNS-сервер
-    5:   "CNAME",   # Псевдоним домена
-    6:   "SOA",     # Информация об авторитетной зоне
+    # 5:   "CNAME",   # Псевдоним домена
+    # 6:   "SOA",     # Информация об авторитетной зоне
     15:  "MX",      # Почтовый сервер
     16:  "TXT",     # Текстовые данные
     28:  "AAAA",    # IPv6-адрес
@@ -21,119 +36,56 @@ DNS_TYPES = {
 TYPE_A = 1
 TYPE_NS = 2
 
-def dns_iterator(domain_name: str, record_type: int,recursion_depth: int = 0, visited_queries: set | None = None,):
-    if visited_queries is None:
-        visited_queries = set()
-
-    query_key = (domain_name.rstrip(".").lower(), record_type)
-
-    if recursion_depth >= ITER_COUNT or query_key in visited_queries:
+def dns_iterator(domain_name: str, record_type: int, recursion_depth: int = 0, visited_servers: set | None = None,):
+    if visited_servers is None:
+        visited_servers = set()
+    
+    if recursion_depth >= ITER_COUNT or domain_name in visited_servers:
         return []
 
-    visited_queries.add(query_key)
+    dns_servers = deque()
+    for root_dns_server in ROOT_DNS_SERVERS:
+        dns_servers.append(root_dns_server)
+    curr_iter_number = 0
 
-    dns_servers = [ROOT_DNS_SERVER]
-    visited_servers = set()
+    while len(dns_servers) > 0 and curr_iter_number < ITER_COUNT:
+        dns_server_addr = dns_servers.pop()
+        
+        if dns_server_addr in visited_servers:
+            continue
 
-    for _ in range(ITER_COUNT):
-        next_dns_servers = []
+        visited_servers.add(dns_server_addr)
 
-        for dns_server in dns_servers:
-            if dns_server in visited_servers:
-                continue
+        dns_message = send_dns_request(dns_server_addr, domain_name, record_type)
 
-            visited_servers.add(dns_server)
+        if dns_message is None:
+            continue
 
-            try:
-                request_id, dns_request = create_dns_query(domain_name, record_type)
+        answer_records = dns_message.get("answers", [])
+        if answer_records:
+            return answer_records
 
-                server_addr = dns_server[0]
-                ip_version = ipaddress.ip_address(server_addr).version
+        authority_records = dns_message.get("authority", [])
+        additional_records = dns_message.get("additional", [])
 
-                if ip_version == 6:
-                    family = socket.AF_INET6
-                    server = (server_addr, 53, 0, 0)
-                else:
-                    family = socket.AF_INET
-                    server = (server_addr, 53)
+        if not authority_records and not additional_records:
+            continue
 
-                with socket.socket(family, socket.SOCK_DGRAM) as sock:
-                    sock.settimeout(TIMEOUT)
-                    sock.sendto(dns_request, server)
-                    dns_response, _ = sock.recvfrom(4096)
+        next_dns_servers, new_visited_servers = get_next_dns_servers_ips(authority_records, additional_records, visited_servers, recursion_depth)
 
-                if len(dns_response) < 12:
-                    continue
+        for new_visited_server in new_visited_servers:
+            visited_servers.add(new_visited_server)
 
-                response_id = int.from_bytes(dns_response[:2], "big")
-                if response_id != request_id:
-                    continue
+        for next_dns_server in next_dns_servers:
+            dns_servers.append(next_dns_server)
 
-                dns_message = parse_dns_message(dns_response)
-                print(dns_message)
+    return None
 
-            except (OSError, ValueError) as e:
-                print(f"DNS server {dns_server} failed: {e}")
-                continue
-
-            answer_records = dns_message.get("answers", [])
-            if answer_records:
-                return answer_records
-
-            authority_records = dns_message.get("authority", [])
-            additional_records = dns_message.get("additional", [])
-
-            # Получаем имена авторитетных NS-серверов
-            name_servers = [record["data"] for record in authority_records if record["type"] == TYPE_NS and record["class"] == 1]
-
-            normalized_ns_names = { name.rstrip(".").lower() for name in name_servers }
-
-            # Сначала ищем IP-адреса NS в additional
-            known_server_ips = set()
-
-            for record in additional_records:
-                if record["name"].rstrip(".").lower() in normalized_ns_names:
-                    if record["type"] == TYPE_A and record["class"] == 1:
-                        server_ip = record["data"]
-                        next_server = (server_ip, 53)
-
-                        if next_server not in visited_servers:
-                            next_dns_servers.append(next_server)
-
-                        known_server_ips.add(server_ip)
-
-            # Если IP NS-сервера не найден, ищем его отдельным DNS-запросом
-            if not known_server_ips:
-                for name_server in name_servers:
-                    if name_server.rstrip(".").lower() in normalized_ns_names:
-                        ns_ip_records = dns_iterator(name_server, TYPE_A,
-                                                    recursion_depth=recursion_depth + 1, visited_queries=visited_queries.copy(),)
-
-                        for record in ns_ip_records:
-                            if record["type"] != TYPE_A:
-                                continue
-
-                            server_ip = record["data"]
-
-                            if server_ip not in known_server_ips:
-                                next_dns_servers.append((server_ip, 53))
-                                known_server_ips.add(server_ip)
-
-            print(known_server_ips)
-
-        if not next_dns_servers:
-            print(111)
-            break
-
-        dns_servers = next_dns_servers
-    print(1111)
-    return []
-
-def send_dns_request(server_addr):
+def send_dns_request(
+        server_addr: tuple[str, int],
+        domain_name: str, record_type: int) -> dict:
     try:
         request_id, dns_request = create_dns_query(domain_name, record_type)
-
-        server_addr = dns_server[0]
         ip_version = ipaddress.ip_address(server_addr).version
 
         if ip_version == 6:
@@ -149,40 +101,81 @@ def send_dns_request(server_addr):
             dns_response, _ = sock.recvfrom(4096)
 
         if len(dns_response) < 12:
-            return dict
+            return {}
 
         response_id = int.from_bytes(dns_response[:2], "big")
         if response_id != request_id:
-            return dict
+            return {}
+
+        is_need_tcp = bool(dns_response[2] & 0x02)
+
+        if is_need_tcp:
+            # днс запрос обязан начинаться с двух байт длины
+            tcp_request = len(dns_request).to_bytes(2, "big") + dns_request
+            
+            with socket.socket(family, socket.SOCK_STREAM) as sock:
+                sock.settimeout(TIMEOUT)
+                sock.connect(server)
+                sock.sendall(tcp_request)
+                
+                response_len_bytes = sock.recv(2)
+                if len(response_len_bytes) < 2:
+                    return {}
+                
+                expected_len = int.from_bytes(response_len_bytes, "big")
+                
+                # Читаем сам DNS-ответ целиком (в цикле на случай фрагментации TCP)
+                dns_response = b""
+                while len(dns_response) < expected_len:
+                    chunk = sock.recv(expected_len - len(dns_response))
+                    if not chunk:
+                        break
+                    dns_response += chunk
 
         dns_message = parse_dns_message(dns_response)
-        print(dns_message)
+
+        return dns_message
 
     except (OSError, ValueError) as e:
-        print(f"DNS server {dns_server} failed: {e}")
+        print(f"DNS server {server_addr} failed: {e}")
+        return None
 
-# def dns_iterator(domain_name: str, record_type: int, ):
-#     server = ROOT_DNS_SERVER
-#     for _ in range(ITER_COUNT):
-#         request_id, dns_packet = create_dns_query(domain_name, record_type)
-#         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-#             sock.settimeout(TIMEOUT)
-#             sock.sendto(dns_packet, server)
-#             response, server_address = sock.recvfrom(4096)
+def get_next_dns_servers_ips(
+        authority_records: dict,
+        additional_records: dict,
+        visited_servers: set,
+        recursion_depth: int,
+    ) -> tuple[list, set]:
+    """Проходит по всем ns серверам из authority и получает их ip адреса"""
+    # Получаем имена следующих NS-серверов
+    name_servers = [record["data"] for record in authority_records if record["type"] == TYPE_NS and record["class"] == 1]
+    normalized_ns_names = { name.rstrip(".").lower() for name in name_servers }
+    next_dns_servers = []
+    # Сначала ищем IP-адреса NS в additional
+    for record in additional_records:
+        if record["name"].rstrip(".").lower() in normalized_ns_names:
+            if record["type"] == TYPE_A and record["class"] == 1:
+                server_ip = record["data"]
 
-#         response_id = int.from_bytes(response[:2], byteorder="big")
+                if server_ip not in visited_servers:
+                    next_dns_servers.append(server_ip)
 
-#         if response_id != request_id:
-#             raise ValueError("ID ответа не совпадает с ID запроса")
+    for name_server in name_servers:
+        if name_server.rstrip(".").lower() in normalized_ns_names:
+            ns_ip_records = dns_iterator(name_server, TYPE_A,
+                                        recursion_depth=recursion_depth + 1, visited_servers=visited_servers.copy(),)
+            if ns_ip_records is None:
+                continue
 
-#         dns_message = parse_dns_message(response)
-#         if dns_message["answers"]:
-#             return dns_message["answers"]
+            for record in ns_ip_records:
+                if record["type"] != TYPE_A:
+                    continue
+                server_ip = record["data"]
+                if server_ip not in next_dns_servers and server_ip not in visited_servers:
+                    next_dns_servers.append(server_ip)
 
-#         next_servers = []
+    return next_dns_servers, visited_servers
 
-
-        
 
 def create_dns_query(domain_name: str, record_type: int) -> tuple[int, bytes]:
 
@@ -221,4 +214,4 @@ def encode_domain_name(domain_name: str) -> bytes:
 
     return encoded_name + b"\x00"
 
-print(dns_iterator("github.com", 16))
+#print(dns_iterator("google.com", 28))

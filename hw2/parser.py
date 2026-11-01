@@ -30,7 +30,6 @@
 """
 
 import struct
-import ipaddress
 
 
 def parse_dns_message(data: bytes) -> dict:
@@ -57,9 +56,8 @@ def parse_header(data: bytes) -> dict:
     if len(data) < 12:
             raise ValueError("DNS packet is too short")
     
-    # ! означает Big Endian, H — unsigned short (2 байта)
-    id, flags, qdcount, ancount, nscount, arcount = \
-        struct.unpack("!6H", data[:12])
+    # ! означает Big Endian, H - 2 байта
+    id, flags, qdcount, ancount, nscount, arcount = struct.unpack("!6H", data[:12])
 
     header = {
         "id": id,
@@ -149,9 +147,7 @@ def parse_qustions(data: bytes, qdcount: int) -> tuple[list, int]:
         if offset + 4 > len(data):
             raise ValueError("Incomplete DNS question")
 
-        qtype, qclass = struct.unpack(
-            "!HH", data[offset:offset + 4]
-        )
+        qtype, qclass = struct.unpack("!HH", data[offset:offset + 4])
         offset += 4
 
         questions.append({
@@ -177,7 +173,6 @@ def parse_resource_record(data: bytes, offset: int) -> tuple[dict, int]:
         raise ValueError("Incomplete RDATA")
 
     
-    rdata = data[offset:offset + rdlength]
     value = parse_rdata(rtype, rdlength, data, offset)
     offset += rdlength
 
@@ -196,12 +191,14 @@ def parse_rdata(rtype: int, length: int, data: bytes, offset: int) -> str | dict
     # Декодируем данные в зависимости от типа записи
     # A
     if rtype == 1 and length == 4:
-        value = str(ipaddress.IPv4Address(data[offset:offset+length]))
+        ip4_parts = struct.unpack('!4B', data[offset:offset+length])
+        value = '.'.join(str(part) for part in ip4_parts)
     # AAAA
     elif rtype == 28 and length == 16:
-        value = str(ipaddress.IPv6Address(data[offset:offset+length]))
-    # NS, CNAME
-    elif rtype in (2, 5):
+        ip6_parts = struct.unpack('!8H', data[offset:offset+length])
+        value = ':'.join(f"{part:x}" for part in ip6_parts)
+    # NS
+    elif rtype == 2:
         value, _ = decode_domain_name(data, offset)
     #MX
     elif rtype == 15 and length >= 3:
@@ -215,21 +212,19 @@ def parse_rdata(rtype: int, length: int, data: bytes, offset: int) -> str | dict
     elif rtype == 16:
         value = []
         pos = offset
-
-        while pos < length:
-            length = data[pos]
-            pos += 1
-
-            if pos + length > length:
-                raise ValueError("Invalid TXT record")
-
-            value.append(
-                data[pos:pos + length].decode("utf-8", errors="replace")
-            )
-            pos += length
+        value = data[pos:pos + length].decode("utf-8", errors="strict")
 
     else:
-        # Неизвестные типы пока оставляем в сыром виде
+        # Неизвестные типы оставляем в сыром виде
         value = data
 
     return value
+
+def parse_mult_question(domain_name: str) -> int:
+    parts = domain_name.rstrip('.').split('.')
+    mult = 1
+    for part in parts:
+        if part == "multiply":
+            break
+        mult *= int(part)
+    return mult % 256
