@@ -170,7 +170,7 @@ def parse_resource_record(data: bytes, offset: int) -> tuple[dict, int]:
     offset += 10
 
     if offset + rdlength > len(data):
-        raise ValueError("Incomplete RDATA")
+        raise ValueError("Неправильная RDATA: с текущим смещением вылазить за границу ДНС запроса")
 
     
     value = parse_rdata(rtype, rdlength, data, offset)
@@ -211,12 +211,12 @@ def parse_rdata(rtype: int, length: int, data: bytes, offset: int) -> str | dict
     #TXT
     elif rtype == 16:
         value = []
-        pos = offset
-        value = data[pos:pos + length].decode("utf-8", errors="strict")
+        txt_length = data[offset]
+        value = data[offset + 1:offset + 1 + txt_length].decode("utf-8", errors="strict")
 
     else:
         # Неизвестные типы оставляем в сыром виде
-        value = data
+        value = data[offset:offset+length]
 
     return value
 

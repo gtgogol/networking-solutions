@@ -5,47 +5,48 @@ from parser import parse_dns_message, parse_mult_question
 from dns_resolver import dns_iterator, encode_domain_name
 
 
-HOST, PORT = "127.0.0.1", 8002
+HOST, PORT = "127.0.0.1", 8000
 BASE_TTL = 300
 
 def tcp_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        #tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         tcp_socket.bind((HOST, PORT))
         tcp_socket.listen()
         print("TCP запущен")
 
         while True:
             connection, address = tcp_socket.accept()
+            print(f"Получен запрос от {connection}")
             try:
                 length_request = connection.recv(2)
                 length = struct.unpack("!H", length_request)[0]
-                dns_request = b""
-                while len(dns_request) < length:
-                    chunk = connection.recv(length - len(dns_request))
-                    if not chunk:
-                        break
-                    dns_request += chunk
+                dns_request = connection.recv(length)
             except (OSError, ValueError) as exc:
                 print(f"Запрос завершился с ошибкой: {exc}")
 
             parsed_request = parse_dns_message(dns_request)
+        
             question = parsed_request["questions"][0]
-
+            answers = []
             if "multiply" in question["name"]:
                 last_part_ip4 = parse_mult_question(question["name"])
                 answer = {
                     "answer": f"{question["name"]}",
-                    "type": "1",
-                    "class": f"{question["class"]}",
-                    "ttl": f"{BASE_TTL}",
-                    "length": "4",
+                    "type": 1,
+                    "class": question["class"],
+                    "ttl": BASE_TTL,
+                    "length": 4,
                     "data": f"127.0.0.{last_part_ip4}"
                 }
-            answer = dns_iterator(question["name"], question["type"])
-            dns_response = create_dns_answer(parsed_request, answer)
+                answers.append(answer)
+            else:
+                answers = dns_iterator(question["name"], question["type"])
+            print(answers)
+            dns_response = create_dns_answer(parsed_request, answers)
+            response = struct.pack("!H", len(dns_response)) + dns_response
             try:
-                connection.sendall(dns_response)
+                connection.sendall(response)
+                print("Ответ пользователю отправлен")
             except OSError as exc:
                 print("Ошибка при отправлке данных")
             finally:
@@ -54,7 +55,8 @@ def tcp_server():
             
 def create_dns_answer(user_request: dict, answers: list) -> bytes:
     """Строит ответ днс ответ пользователю"""
-    header = build_answer_header(user_request["header"]["id"], 1, len(answers))
+    len_answers = len(answers) if answers is not None else 0 
+    header = build_answer_header(user_request["header"]["id"], 1, len_answers)
 
     question_name = encode_domain_name(user_request["questions"][0]["name"])
     question_details = struct.pack("!HH", user_request["questions"][0]["type"], 1)
@@ -85,16 +87,20 @@ def build_answer_header(id: int, questions_count: int, answers_count: int) -> by
     )
     flags = struct.pack('!H', flags_int)
 
-    return id.to_bytes(2, "big")+flags+questions_count.to_bytes(2, "big")+answers_count.to_bytes(2, "big")
+    return id.to_bytes(2, "big")+flags+questions_count.to_bytes(2, "big")+answers_count.to_bytes(2, "big")+(0).to_bytes(2, "big")+(0).to_bytes(2, "big")
 
 def build_answer_ans_section(answers: dict, user_request: dict) -> bytes:
     answer_section = b""
+
+    if answers is None:
+        return answer_section
+    
     for answer in answers:
         ans_name = b'\xc0\x0c'
         ans_type_class = struct.pack('!HH', user_request["questions"][0]["type"], 1)
         ans_ttl = struct.pack('!I', answer["ttl"])
-        ans_rdlength = struct.pack('!H', answer["length"])
         ans_rdata = build_rdata(answer["type"], answer["data"], answer["length"])
+        ans_rdlength = struct.pack('!H', len(ans_rdata))
         answer_section += ans_name + ans_type_class + ans_ttl + ans_rdlength + ans_rdata
 
     return answer_section
@@ -102,10 +108,10 @@ def build_answer_ans_section(answers: dict, user_request: dict) -> bytes:
 def build_rdata(type: int, data: str | dict | bytes, length: int) -> bytes:
     if type == 1:
         ip_parts = [int(part) for part in data.split('.')]
-        return bytes(ip_parts)
+        return struct.pack('!4B', *ip_parts)
     elif type == 28:
         ip_parts = [int(part, 16) for part in data.split(':')]
-        return bytes(ip_parts)
+        return struct.pack('!8H', *ip_parts)
     elif type == 2:
         return encode_domain_name(data)
     elif type == 15:
