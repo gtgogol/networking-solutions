@@ -4,6 +4,7 @@ import random
 import ipaddress
 from collections import deque
 from parser import parse_dns_message
+from dns_packet_builder import encode_domain_name, create_dns_packet, FLAGS_INT_TO_REQUEST_WITHOT_RECURSION
 
 ROOT_DNS_SERVERS = [
     "198.41.0.4",      # A-root
@@ -36,7 +37,7 @@ DNS_TYPES = {
 TYPE_A = 1
 TYPE_NS = 2
 
-def dns_iterator(domain_name: str, record_type: int, recursion_depth: int = 0, visited_servers: set | None = None,):
+def dns_iterator(domain_name: str, record_type: int, recursion_depth: int = 0, visited_servers: set = None,):
     if visited_servers is None:
         visited_servers = set()
     
@@ -73,65 +74,47 @@ def dns_iterator(domain_name: str, record_type: int, recursion_depth: int = 0, v
 
         next_dns_servers, new_visited_servers = get_next_dns_servers_ips(authority_records, additional_records, visited_servers, recursion_depth)
 
-        for new_visited_server in new_visited_servers:
-            visited_servers.add(new_visited_server)
-
-        for next_dns_server in next_dns_servers:
-            dns_servers.append(next_dns_server)
+        visited_servers.update(new_visited_servers)
+        dns_servers.append(server for server in next_dns_servers)
+        curr_iter_number += 1
 
     return None
 
-def send_dns_request(
-        server_addr: tuple[str, int],
-        domain_name: str, record_type: int) -> dict:
+def send_dns_request(server_addr: str, domain_name: str, record_type: int) -> dict:
+    """Посылает днс запросс серверу, получает ответ и возвращает распршенный ответ от сервера"""
     try:
-        request_id, dns_request = create_dns_query(domain_name, record_type)
-        ip_version = ipaddress.ip_address(server_addr).version
+        request_id = random.randrange(65536)
+        questions = [{"name": domain_name, "type": record_type, "class": 1}]
+        dns_request = create_dns_packet(request_id, FLAGS_INT_TO_REQUEST_WITHOT_RECURSION, questions)
+        family, server = get_ip_family_and_server(server_addr)
 
-        if ip_version == 6:
-            family = socket.AF_INET6
-            server = (server_addr, 53, 0, 0)
-        else:
-            family = socket.AF_INET
-            server = (server_addr, 53)
-
-        with socket.socket(family, socket.SOCK_DGRAM) as sock:
+        tcp_request = len(dns_request).to_bytes(2, "big") + dns_request
+        with socket.socket(family, socket.SOCK_STREAM) as sock:
             sock.settimeout(TIMEOUT)
-            sock.sendto(dns_request, server)
-            dns_response, _ = sock.recvfrom(4096)
+            sock.connect(server)
+            sock.sendall(tcp_request)
+            
+            response_len_bytes = sock.recv(2)
+            if len(response_len_bytes) < 2:
+                return None
+            
+            expected_len = int.from_bytes(response_len_bytes, "big")
+            
+            # Читаем сам DNS-ответ целиком (в цикле на случай фрагментации TCP)
+            dns_response = b""
+            while len(dns_response) < expected_len:
+                chunk = sock.recv(expected_len - len(dns_response))
+                if not chunk:
+                    break
+                dns_response += chunk
 
         if len(dns_response) < 12:
-            return {}
+            return None
 
         response_id = int.from_bytes(dns_response[:2], "big")
         if response_id != request_id:
-            return {}
-
-        is_need_tcp = bool(dns_response[2] & 0x02)
-
-        if is_need_tcp:
-            # днс запрос обязан начинаться с двух байт длины
-            tcp_request = len(dns_request).to_bytes(2, "big") + dns_request
-            
-            with socket.socket(family, socket.SOCK_STREAM) as sock:
-                sock.settimeout(TIMEOUT)
-                sock.connect(server)
-                sock.sendall(tcp_request)
-                
-                response_len_bytes = sock.recv(2)
-                if len(response_len_bytes) < 2:
-                    return {}
-                
-                expected_len = int.from_bytes(response_len_bytes, "big")
-                
-                # Читаем сам DNS-ответ целиком (в цикле на случай фрагментации TCP)
-                dns_response = b""
-                while len(dns_response) < expected_len:
-                    chunk = sock.recv(expected_len - len(dns_response))
-                    if not chunk:
-                        break
-                    dns_response += chunk
-
+            return None
+        
         dns_message = parse_dns_message(dns_response)
 
         return dns_message
@@ -140,12 +123,19 @@ def send_dns_request(
         print(f"DNS server {server_addr} failed: {e}")
         return None
 
-def get_next_dns_servers_ips(
-        authority_records: dict,
-        additional_records: dict,
-        visited_servers: set,
-        recursion_depth: int,
-    ) -> tuple[list, set]:
+def get_ip_family_and_server(ip: str) -> tuple[socket.AddressFamily, tuple]:
+    """По ip адресу возвращает семейство сети и сервер в правильном формате"""
+    ip_version = ipaddress.ip_address(ip).version
+    if ip_version == 6:
+        family = socket.AF_INET6
+        server = (ip, 53, 0, 0)
+    else:
+        family = socket.AF_INET
+        server = (ip, 53)
+
+    return family, server
+
+def get_next_dns_servers_ips(authority_records: dict, additional_records: dict, visited_servers: set,recursion_depth: int,) -> tuple[list, set]:
     """Проходит по всем ns серверам из authority и получает их ip адреса"""
     # Получаем имена следующих NS-серверов
     name_servers = [record["data"] for record in authority_records if record["type"] == TYPE_NS and record["class"] == 1]
@@ -175,43 +165,5 @@ def get_next_dns_servers_ips(
                     next_dns_servers.append(server_ip)
 
     return next_dns_servers, visited_servers
-
-
-def create_dns_query(domain_name: str, record_type: int) -> tuple[int, bytes]:
-
-    request_id = random.randrange(65536)
-
-    # RD=0: рекурсия выключена
-    dns_header = struct.pack(
-        "!HHHHHH",
-        request_id,  # ID запроса
-        0,           # Флаги
-        1,           # Количество вопросов
-        0,           # Количество ответов
-        0,           # Количество записей Authority
-        0            # Количество записей Additional
-    )
-
-    question_name = encode_domain_name(domain_name)
-
-    # QTYPE=record_type (DNS_TYPES), QCLASS=1 (IN)
-    question_details = struct.pack("!HH", record_type, 1)
-
-    dns_question = question_name + question_details
-    dns_packet = dns_header + dns_question
-
-    return request_id, dns_packet
-
-def encode_domain_name(domain_name: str) -> bytes:
-    encoded_name = b""
-    for label in domain_name.rstrip(".").split("."):
-        label_bytes = label.encode("ascii")
-
-        if len(label_bytes) > 63:
-            raise ValueError("DNS-метка не может быть длиннее 63 байт")
-
-        encoded_name += bytes([len(label_bytes)]) + label_bytes
-
-    return encoded_name + b"\x00"
 
 #print(dns_iterator("google.com", 28))
