@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+#Мои данные
+*.zip
+hw2/cache/
+nets_venv
+cache/
