@@ -41,9 +41,12 @@ def tcp_server():
                     }
                     answers.append(answer)
                 else:
-                    answers.append(answer for answer in dns_iterator(question["name"], question["type"]))
-            print(answers)
-            dns_response = create_dns_packet(parsed_request["id"], FLAGS_INT_TO_RESPONSE, parsed_request["questions"],answers)
+                    answers_dns_iterator = dns_iterator(question["name"], question["type"])
+                    if answers_dns_iterator is None:
+                        continue
+                    for answer in answers_dns_iterator:
+                        answers.append(answer)
+            dns_response = create_dns_packet(parsed_request["header"]["id"], FLAGS_INT_TO_RESPONSE, parsed_request["questions"],answers)
             response = struct.pack("!H", len(dns_response)) + dns_response
             try:
                 connection.sendall(response)

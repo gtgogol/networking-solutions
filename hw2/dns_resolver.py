@@ -56,7 +56,6 @@ def dns_iterator(domain_name: str, record_type: int, recursion_depth: int = 0, v
             continue
 
         visited_servers.add(dns_server_addr)
-
         dns_message = send_dns_request(dns_server_addr, domain_name, record_type)
 
         if dns_message is None:
@@ -75,7 +74,8 @@ def dns_iterator(domain_name: str, record_type: int, recursion_depth: int = 0, v
         next_dns_servers, new_visited_servers = get_next_dns_servers_ips(authority_records, additional_records, visited_servers, recursion_depth)
 
         visited_servers.update(new_visited_servers)
-        dns_servers.append(server for server in next_dns_servers)
+        for server in next_dns_servers:
+            dns_servers.append(server)
         curr_iter_number += 1
 
     return None
@@ -120,7 +120,7 @@ def send_dns_request(server_addr: str, domain_name: str, record_type: int) -> di
         return dns_message
 
     except (OSError, ValueError) as e:
-        print(f"DNS server {server_addr} failed: {e}")
+        print(f"Днс сервер {server_addr} получил ошибку: {e}")
         return None
 
 def get_ip_family_and_server(ip: str) -> tuple[socket.AddressFamily, tuple]:
