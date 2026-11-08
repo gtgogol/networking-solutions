@@ -101,7 +101,7 @@ def decode_domain_name(data: bytes, offset: int) -> tuple[str, int]:
         # Compression pointer: два старших бита равны 11
         if length & 0xC0 == 0xC0:
             if pos + 1 >= len(data):
-                raise ValueError("Incomplete compression pointer")
+                raise ValueError("Неправильный указатель")
             #берем оставшиеся 6 бит прибавляем к ним 8 бит и получаем смещение которое указывает на каком мест у нас находтся запись доменного имени
             pointer = ((length & 0x3F) << 8) | data[pos + 1]
 
