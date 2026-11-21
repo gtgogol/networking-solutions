@@ -131,7 +131,7 @@ def decode_domain_name(data: bytes, offset: int) -> tuple[str, int]:
         if pos + length > len(data):
             raise ValueError("Incomplete DNS label")
 
-        labels.append(data[pos:pos + length].decode("ascii"))
+        labels.append(data[pos:pos + length].encode("ascii"))
         pos += length
 
     return ".".join(labels), next_offset

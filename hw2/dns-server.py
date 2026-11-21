@@ -6,8 +6,8 @@ from dns_packet_builder import create_dns_packet, FLAGS_INT_TO_RESPONSE
 from diskcache import Cache
 
 
-CACHE = Cache("./cache")
-HOST, PORT = "127.0.0.1", 8000
+CACHE = Cache("cache")
+HOST, PORT = "127.0.0.1", 8001
 BASE_TTL = 300
 
 
