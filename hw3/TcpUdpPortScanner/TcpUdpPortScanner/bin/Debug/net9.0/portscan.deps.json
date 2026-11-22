@@ -1,0 +1,93 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "portscan/1.0.0": {
+        "dependencies": {
+          "System.CommandLine": "3.0.0"
+        },
+        "runtime": {
+          "portscan.dll": {}
+        }
+      },
+      "System.CommandLine/3.0.0": {
+        "dependencies": {
+          "System.Memory": "4.6.3"
+        },
+        "runtime": {
+          "lib/netstandard2.0/System.CommandLine.dll": {
+            "assemblyVersion": "3.0.0.0",
+            "fileVersion": "3.0.26.53018"
+          }
+        },
+        "resources": {
+          "lib/netstandard2.0/cs/System.CommandLine.resources.dll": {
+            "locale": "cs"
+          },
+          "lib/netstandard2.0/de/System.CommandLine.resources.dll": {
+            "locale": "de"
+          },
+          "lib/netstandard2.0/es/System.CommandLine.resources.dll": {
+            "locale": "es"
+          },
+          "lib/netstandard2.0/fr/System.CommandLine.resources.dll": {
+            "locale": "fr"
+          },
+          "lib/netstandard2.0/it/System.CommandLine.resources.dll": {
+            "locale": "it"
+          },
+          "lib/netstandard2.0/ja/System.CommandLine.resources.dll": {
+            "locale": "ja"
+          },
+          "lib/netstandard2.0/ko/System.CommandLine.resources.dll": {
+            "locale": "ko"
+          },
+          "lib/netstandard2.0/pl/System.CommandLine.resources.dll": {
+            "locale": "pl"
+          },
+          "lib/netstandard2.0/pt-BR/System.CommandLine.resources.dll": {
+            "locale": "pt-BR"
+          },
+          "lib/netstandard2.0/ru/System.CommandLine.resources.dll": {
+            "locale": "ru"
+          },
+          "lib/netstandard2.0/tr/System.CommandLine.resources.dll": {
+            "locale": "tr"
+          },
+          "lib/netstandard2.0/zh-Hans/System.CommandLine.resources.dll": {
+            "locale": "zh-Hans"
+          },
+          "lib/netstandard2.0/zh-Hant/System.CommandLine.resources.dll": {
+            "locale": "zh-Hant"
+          }
+        }
+      },
+      "System.Memory/4.6.3": {}
+    }
+  },
+  "libraries": {
+    "portscan/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "System.CommandLine/3.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-swNpSTl0iYJeBuvYYfaY+VxzZ5YC8wklwkqDCNOq2aTQqJzjauJfh/O3Zw93nwxspWrxvZTjT45f8VPR0ParEA==",
+      "path": "system.commandline/3.0.0",
+      "hashPath": "system.commandline.3.0.0.nupkg.sha512"
+    },
+    "System.Memory/4.6.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-qdcDOgnFZY40+Q9876JUHnlHu7bosOHX8XISRoH94fwk6hgaeQGSgfZd8srWRZNt5bV9ZW2TljcegDNxsf+96A==",
+      "path": "system.memory/4.6.3",
+      "hashPath": "system.memory.4.6.3.nupkg.sha512"
+    }
+  }
+}

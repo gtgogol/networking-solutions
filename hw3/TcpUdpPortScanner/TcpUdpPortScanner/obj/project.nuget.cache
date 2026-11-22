@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "P0S6CVyyKqM=",
+  "dgSpecHash": "lbBSVDNxaj8=",
   "success": true,
-  "projectFilePath": "/Users/egor/University/nets/networking-solutions/hw3/TcpUdpPortScanner/TcpUdpPortScanner/TcpUdpPortScanner.csproj",
-  "expectedPackageFiles": [],
+  "projectFilePath": "C:\\Users\\egorg\\Desktop\\university\\Nets\\networking-solutions\\hw3\\TcpUdpPortScanner\\TcpUdpPortScanner\\TcpUdpPortScanner.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\egorg\\.nuget\\packages\\system.commandline\\3.0.0\\system.commandline.3.0.0.nupkg.sha512",
+    "C:\\Users\\egorg\\.nuget\\packages\\system.memory\\4.6.3\\system.memory.4.6.3.nupkg.sha512"
+  ],
   "logs": []
 }
